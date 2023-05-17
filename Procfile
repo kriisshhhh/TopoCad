@@ -1,0 +1,1 @@
+web: gunicorn geometry_editor.wsgi --log-file -

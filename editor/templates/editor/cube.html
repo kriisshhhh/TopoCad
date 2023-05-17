@@ -1,0 +1,1057 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js 3D Model Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/TransformControls.js"></script>
+    <script src="/static/js/OBJExporter.js"></script>
+
+    <link rel="shortcut icon" type="image/x-icon" href="https://www.k5learning.com/sites/all/files/vertices.gif">
+    <link rel="stylesheet" type="text/css" href="/static/editor/styles.css">
+</head>
+<body>
+    <div class="top-panel">
+        <div class="logo">3D Geometry Editor for Topologic</div>
+        </div>
+        
+    </div>
+    <div class="toolbar">
+        <div class="toolbar-rectangle">
+            <button class ="editor-scale-button" id="scale-button">Scale</button>
+            <button class="editor-move-button" id="move-button">Move</label>
+            <button class="editor-rotate-button" id="rotate-button">Rotate</label>
+            <button class="editor-vertex-button" id="vertex-button">Vertex Editor</label>
+            <button class ="export-button" id="export-button">Export</button>
+        </div>
+    </div>
+
+    <div class="left-panel">
+        <div class="fileRectangle">
+            <input type="file" id="fileInput">
+        </div>
+        <button class="square-button" id="cube_button"></button>
+        <button class="cylinder-button" id="cylinder_button"></button>
+        <button class="torus_button" id="torus_button"></button>
+        <button class="sphere_button" id="sphere_button"></button>
+    </div>
+
+    <script>
+        //------------------------------------------------------------------------------------------------------
+        //Set the scene
+        //------------------------------------------------------------------------------------------------------
+        var scene = new THREE.Scene();
+        var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+        camera.position.set(100, 50, 100);
+        camera.lookAt(0, 0, 0);
+        //------------------------------------------------------------------------------------------------------
+        //Set the Renderer
+        //------------------------------------------------------------------------------------------------------
+        var renderer = new THREE.WebGLRenderer({ alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000, 0);
+        document.body.appendChild(renderer.domElement);
+        //------------------------------------------------------------------------------------------------------
+        //Set the Grid Helper
+        //------------------------------------------------------------------------------------------------------
+        const helper = new THREE.GridHelper(500, 80);
+        helper.position.y = -5;
+        helper.material.opacity = 0.25;
+        helper.material.transparent = true;
+        scene.add(helper);
+
+        var transformControl;
+
+        //------------------------------------------------------------------------------------------------------
+        // Generate Topologic Cube using Cube Button
+        //------------------------------------------------------------------------------------------------------
+        // Define the cube vertices and faces as arrays
+        var cube_vertice = {{ cube_vertices|safe }};
+        var cube_vertices = cube_vertice.flat();
+        var cube_face = {{ cube_faces|safe }};
+        var cube_faces = cube_face.flat();
+        var cube_edge = {{ cube_edges|safe}};
+        var cube_edges = cube_edge.flat();
+        //---------------------------------------------------------------
+        var cubeButton = document.getElementById('cube_button');
+        cubeButton.addEventListener('click', function () {
+            //Add a group element to add the wire and the faces in one geometry
+            var object = new THREE.Group();
+            
+            // Create a new BufferGeometry object
+            var cube_geometry = new THREE.BufferGeometry();
+
+            const vertices_cube = new Float32Array(cube_vertices);
+
+            // Set the vertex positions attribute using the vertices array
+            cube_geometry.setAttribute('position', new THREE.BufferAttribute(vertices_cube, 3));
+
+            // Set the index attribute using the faces array
+            cube_geometry.setIndex(new THREE.Uint32BufferAttribute(cube_faces, 1));
+
+            // Compute vertex normals
+            cube_geometry.computeVertexNormals();        
+            //-------------------------
+            const cube_edges_geom = new THREE.LineSegments(new THREE.EdgesGeometry(cube_geometry), new THREE.LineBasicMaterial({ color: 0XB8B8B8 }));
+            //-------------------------    
+
+            var cube_geom = new THREE.Mesh(cube_geometry);
+            cube_geom.traverse(function (child) {
+            if (child instanceof THREE.Mesh) {
+                var material = new THREE.MeshBasicMaterial({
+                color: 0xD3D3D3,
+                opacity: 0.5,
+                transparent: true,
+                });
+                child.material = material;
+                child.material.side = THREE.DoubleSide;
+                child.material.depthWrite = false;
+            }
+            });
+
+            object.add(cube_geom);
+            object.add(cube_edges_geom);
+
+            // Add the mesh to the scene
+            scene.add(object);
+
+                zoomOut(camera, object);
+
+                transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                transformControl.addEventListener('change', render);
+                transformControl.addEventListener('dragging-changed', function (event) {
+                    controls.enabled = !event.value;
+                });
+
+                var vertexButton = document.getElementById('vertex-button');
+                vertexButton.addEventListener('click', function () {
+                    object.remove(cube_edges_geom);
+                    if (transformControl !== undefined) {
+                      scene.remove(transformControl);
+                      transformControl.dispose();
+                      transformControl = undefined;
+                    }
+
+                    var cube = new THREE.Mesh(cube_geometry, new THREE.MeshBasicMaterial({
+                        wireframe: true,
+                        color: "gray"
+                      }));
+                      scene.add(cube);
+                      object.add(cube);
+                      
+                      var points = new THREE.Points(cube_geometry, new THREE.PointsMaterial({
+                        size: 0.5,
+                        color: "yellow"
+                      }));
+                      scene.add(points);
+                      object.add(points);
+                      
+                      var raycaster = new THREE.Raycaster();
+                      raycaster.params.Points.threshold = 0.25;
+                      var mouse = new THREE.Vector2();
+                      var intersects = null;
+                      var plane = new THREE.Plane();
+                      var planeNormal = new THREE.Vector3();
+                      var currentIndex = null;
+                      var planePoint = new THREE.Vector3();
+                      var dragging = false;
+
+                      window.addEventListener("mousedown", mouseDown, false);
+                      window.addEventListener("mousemove", mouseMove, false);
+                      window.addEventListener("mouseup", mouseUp, false);
+                      
+                      function mouseDown(event) {
+                        setRaycaster(event);
+                        getIndex();
+                        dragging = true;
+                      }
+                      
+                      function mouseMove(event) {
+                        if (dragging && currentIndex !== null) {
+                          setRaycaster(event);
+                          raycaster.ray.intersectPlane(plane, planePoint);
+                          cube_geometry.attributes.position.setXYZ(currentIndex, planePoint.x, planePoint.y, planePoint.z);
+                          cube_geometry.attributes.position.needsUpdate = true;
+                        }
+                      }
+                      
+                      function mouseUp(event) {
+                        dragging = false;
+                        currentIndex = null;
+                      }
+                      
+                      function getIndex() {
+                        intersects = raycaster.intersectObject(points);
+                        if (intersects.length === 0) {
+                          currentIndex = null;
+                          return;
+                        }
+                        currentIndex = intersects[0].index;
+                        setPlane(intersects[0].point);
+                      }
+                      
+                      function setPlane(point) {
+                        planeNormal.subVectors(camera.position, point).normalize();
+                        plane.setFromNormalAndCoplanarPoint(planeNormal, point);
+                      }
+                      
+                      function setRaycaster(event) {
+                        getMouse(event);
+                        raycaster.setFromCamera(mouse, camera);
+                      }
+                      
+                      function getMouse(event) {
+                        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                      }
+                      
+                      render();
+                      
+                      function render() {
+                        requestAnimationFrame(render);
+                        renderer.render(scene, camera);
+                      }
+                });
+
+                var scaleButton = document.getElementById('scale-button');
+                scaleButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('scale');
+                });
+
+                var moveButton = document.getElementById('move-button');
+                moveButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('translate');
+                });
+
+                var pullButton = document.getElementById('rotate-button');
+                pullButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('rotate');
+                });
+
+                transformControl.attach(object);
+                scene.add(transformControl);
+        });
+
+        //------------------------------------------------------------------------------------------------------
+        // Generate Topologic Torus using Torus Button
+        //------------------------------------------------------------------------------------------------------
+        // Define the cube vertices and faces as arrays
+        var torus_vertice = {{ torus_vertices|safe }};
+        var torus_vertices = torus_vertice.flat();
+        var torus_face = {{ torus_faces|safe }};
+        var torus_faces = torus_face.flat();
+        var torus_edge = {{ torus_edges|safe}};
+        var torus_edges = torus_edge.flat();
+
+        //---------------------------------------------------------------
+        var torusButton = document.getElementById('torus_button');
+        torusButton.addEventListener('click', function () {
+            //Add a group element to add the wire and the faces in one geometry
+            var object = new THREE.Group();
+            
+            // Create a new BufferGeometry object
+            var torus_geometry = new THREE.BufferGeometry();
+
+            const vertices_torus = new Float32Array(torus_vertices);
+
+            // Set the vertex positions attribute using the vertices array
+            torus_geometry.setAttribute('position', new THREE.BufferAttribute(vertices_torus, 3));
+
+            // Set the index attribute using the faces array
+            torus_geometry.setIndex(new THREE.Uint32BufferAttribute(torus_faces, 1));
+
+            // Compute vertex normals
+            torus_geometry.computeVertexNormals();        
+            //-------------------------
+            const torus_edges_geom = new THREE.LineSegments(new THREE.EdgesGeometry(torus_geometry), new THREE.LineBasicMaterial({ color: 0XB8B8B8 }));
+            //-------------------------    
+
+            var torus_geom = new THREE.Mesh(torus_geometry);
+            torus_geom.traverse(function (child) {
+            if (child instanceof THREE.Mesh) {
+                var material = new THREE.MeshBasicMaterial({
+                color: 0xD3D3D3,
+                opacity: 0.5,
+                transparent: true,
+                });
+                child.material = material;
+                child.material.side = THREE.DoubleSide;
+                child.material.depthWrite = false;
+            }
+            
+            });
+
+            object.add(torus_geom);
+            object.add(torus_edges_geom);
+
+            
+
+            // Add the mesh to the scene
+            scene.add(object);
+
+                zoomOut(camera, object);
+
+                transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                transformControl.addEventListener('change', render);
+                transformControl.addEventListener('dragging-changed', function (event) {
+                    controls.enabled = !event.value;
+                });
+
+                var vertexButton = document.getElementById('vertex-button');
+                vertexButton.addEventListener('click', function () {
+                    object.remove(torus_edges_geom);
+                    if (transformControl !== undefined) {
+                      scene.remove(transformControl);
+                      transformControl.dispose();
+                      transformControl = undefined;
+                    }
+
+                    var torus = new THREE.Mesh(torus_geometry, new THREE.MeshBasicMaterial({
+                        wireframe: true,
+                        color: "gray"
+                      }));
+                      scene.add(torus);
+                      object.add(torus);
+                      
+                      var points = new THREE.Points(torus_geometry, new THREE.PointsMaterial({
+                        size: 0.5,
+                        color: "yellow"
+                      }));
+                      scene.add(points);
+                      object.add(points);
+                      
+                      var raycaster = new THREE.Raycaster();
+                      raycaster.params.Points.threshold = 0.25;
+                      var mouse = new THREE.Vector2();
+                      var intersects = null;
+                      var plane = new THREE.Plane();
+                      var planeNormal = new THREE.Vector3();
+                      var currentIndex = null;
+                      var planePoint = new THREE.Vector3();
+                      var dragging = false;
+
+                      window.addEventListener("mousedown", mouseDown, false);
+                      window.addEventListener("mousemove", mouseMove, false);
+                      window.addEventListener("mouseup", mouseUp, false);
+                      
+                      function mouseDown(event) {
+                        setRaycaster(event);
+                        getIndex();
+                        dragging = true;
+                      }
+                      
+                      function mouseMove(event) {
+                        if (dragging && currentIndex !== null) {
+                          setRaycaster(event);
+                          raycaster.ray.intersectPlane(plane, planePoint);
+                          torus_geometry.attributes.position.setXYZ(currentIndex, planePoint.x, planePoint.y, planePoint.z);
+                          torus_geometry.attributes.position.needsUpdate = true;
+                        }
+                      }
+                      
+                      function mouseUp(event) {
+                        dragging = false;
+                        currentIndex = null;
+                      }
+                      
+                      function getIndex() {
+                        intersects = raycaster.intersectObject(points);
+                        if (intersects.length === 0) {
+                          currentIndex = null;
+                          return;
+                        }
+                        currentIndex = intersects[0].index;
+                        setPlane(intersects[0].point);
+                      }
+                      
+                      function setPlane(point) {
+                        planeNormal.subVectors(camera.position, point).normalize();
+                        plane.setFromNormalAndCoplanarPoint(planeNormal, point);
+                      }
+                      
+                      function setRaycaster(event) {
+                        getMouse(event);
+                        raycaster.setFromCamera(mouse, camera);
+                      }
+                      
+                      function getMouse(event) {
+                        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                      }
+                      
+                      render();
+                      
+                      function render() {
+                        requestAnimationFrame(render);
+                        renderer.render(scene, camera);
+                      }
+                });
+
+                var scaleButton = document.getElementById('scale-button');
+                scaleButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('scale');
+                });
+
+                
+
+                var moveButton = document.getElementById('move-button');
+                moveButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('translate');
+                });
+
+                var pullButton = document.getElementById('rotate-button');
+                pullButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('rotate');
+                });
+
+                transformControl.attach(object);
+                scene.add(transformControl);
+        });
+
+        //------------------------------------------------------------------------------------------------------
+        // Generate Topologic Cylinder using Cylinder Button
+        //------------------------------------------------------------------------------------------------------
+        // Define the cylinder vertices and faces as arrays
+        var cylinder_vertice = {{ cylinder_vertices|safe }};
+        var cylinder_vertices = cylinder_vertice.flat();
+        var cylinder_face = {{ cylinder_faces|safe }};
+        var cylinder_faces = cylinder_face.flat();
+        var cylinder_edge = {{ cylinder_edges|safe}};
+        var cylinder_edges = cylinder_edge.flat();
+        //---------------------------------------------------------------
+        var cylinderButton = document.getElementById('cylinder_button');
+        cylinderButton.addEventListener('click', function () {
+            //Add a group element to add the wire and the faces in one geometry
+            var object = new THREE.Group();
+            
+            // Create a new BufferGeometry object
+            var cylinder_geometry = new THREE.BufferGeometry();
+
+            const vertices_cylinder = new Float32Array(cylinder_vertices);
+
+            // Set the vertex positions attribute using the vertices array
+            cylinder_geometry.setAttribute('position', new THREE.BufferAttribute(vertices_cylinder, 3));
+
+            // Set the index attribute using the faces array
+            cylinder_geometry.setIndex(new THREE.Uint32BufferAttribute(cylinder_faces, 1));
+
+            // Compute vertex normals
+            cylinder_geometry.computeVertexNormals();        
+            //-------------------------
+            const cylinder_edges_geom = new THREE.LineSegments(new THREE.EdgesGeometry(cylinder_geometry), new THREE.LineBasicMaterial({ color: 0XB8B8B8 }));
+            //-------------------------    
+
+            var cylinder_geom = new THREE.Mesh(cylinder_geometry);
+            cylinder_geom.traverse(function (child) {
+            if (child instanceof THREE.Mesh) {
+                var material = new THREE.MeshBasicMaterial({
+                color: 0xD3D3D3,
+                opacity: 0.5,
+                transparent: true,
+                });
+                child.material = material;
+                child.material.side = THREE.DoubleSide;
+                child.material.depthWrite = false;
+            }
+            });
+
+            object.add(cylinder_geom);
+            object.add(cylinder_edges_geom);
+
+            // Add the mesh to the scene
+            scene.add(object);
+
+                zoomOut(camera, object);
+
+                transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                transformControl.addEventListener('change', render);
+                transformControl.addEventListener('dragging-changed', function (event) {
+                    controls.enabled = !event.value;
+                });
+
+                var vertexButton = document.getElementById('vertex-button');
+                vertexButton.addEventListener('click', function () {
+
+                    object.remove(cylinder_edges_geom);
+                    if (transformControl !== undefined) {
+                      scene.remove(transformControl);
+                      transformControl.dispose();
+                      transformControl = undefined;
+                    }
+
+                    var cylinder = new THREE.Mesh(cylinder_geometry, new THREE.MeshBasicMaterial({
+                        wireframe: true,
+                        color: "gray"
+                      }));
+                      scene.add(cylinder);
+                      object.add(cylinder);
+                      
+                      var points = new THREE.Points(cylinder_geometry, new THREE.PointsMaterial({
+                        size: 0.5,
+                        color: "yellow"
+                      }));
+                      scene.add(points);
+                      object.add(points);
+                      
+                      var raycaster = new THREE.Raycaster();
+                      raycaster.params.Points.threshold = 0.25;
+                      var mouse = new THREE.Vector2();
+                      var intersects = null;
+                      var plane = new THREE.Plane();
+                      var planeNormal = new THREE.Vector3();
+                      var currentIndex = null;
+                      var planePoint = new THREE.Vector3();
+                      var dragging = false;
+
+                      window.addEventListener("mousedown", mouseDown, false);
+                      window.addEventListener("mousemove", mouseMove, false);
+                      window.addEventListener("mouseup", mouseUp, false);
+                      
+                      function mouseDown(event) {
+                        setRaycaster(event);
+                        getIndex();
+                        dragging = true;
+                      }
+                      
+                      function mouseMove(event) {
+                        if (dragging && currentIndex !== null) {
+                          setRaycaster(event);
+                          raycaster.ray.intersectPlane(plane, planePoint);
+                          cylinder_geometry.attributes.position.setXYZ(currentIndex, planePoint.x, planePoint.y, planePoint.z);
+                          cylinder_geometry.attributes.position.needsUpdate = true;
+                        }
+                      }
+                      
+                      function mouseUp(event) {
+                        dragging = false;
+                        currentIndex = null;
+                      }
+                      
+                      function getIndex() {
+                        intersects = raycaster.intersectObject(points);
+                        if (intersects.length === 0) {
+                          currentIndex = null;
+                          return;
+                        }
+                        currentIndex = intersects[0].index;
+                        setPlane(intersects[0].point);
+                      }
+                      
+                      function setPlane(point) {
+                        planeNormal.subVectors(camera.position, point).normalize();
+                        plane.setFromNormalAndCoplanarPoint(planeNormal, point);
+                      }
+                      
+                      function setRaycaster(event) {
+                        getMouse(event);
+                        raycaster.setFromCamera(mouse, camera);
+                      }
+                      
+                      function getMouse(event) {
+                        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                      }
+                      
+                      render();
+                      
+                      function render() {
+                        requestAnimationFrame(render);
+                        renderer.render(scene, camera);
+                      }
+                });
+
+                var scaleButton = document.getElementById('scale-button');
+                scaleButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('scale');
+                });
+
+                var moveButton = document.getElementById('move-button');
+                moveButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('translate');
+                });
+
+                var pullButton = document.getElementById('rotate-button');
+                pullButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('rotate');
+                });
+
+                transformControl.attach(object);
+                scene.add(transformControl);
+        });
+
+        //------------------------------------------------------------------------------------------------------
+        // Generate Topologic sphere using sphere Button
+        //------------------------------------------------------------------------------------------------------
+        // Define the sphere vertices and faces as arrays
+        var sphere_vertice = {{ sphere_vertices|safe }};
+        var sphere_vertices = sphere_vertice.flat();
+        var sphere_face = {{ sphere_faces|safe }};
+        var sphere_faces = sphere_face.flat();
+        var sphere_edge = {{ sphere_edges|safe}};
+        var sphere_edges = sphere_edge.flat();
+        //---------------------------------------------------------------
+        var sphereButton = document.getElementById('sphere_button');
+        sphereButton.addEventListener('click', function () {
+            //Add a group element to add the wire and the faces in one geometry
+            var object = new THREE.Group();
+            
+            // Create a new BufferGeometry object
+            var sphere_geometry = new THREE.BufferGeometry();
+
+            const vertices_sphere = new Float32Array(sphere_vertices);
+
+            // Set the vertex positions attribute using the vertices array
+            sphere_geometry.setAttribute('position', new THREE.BufferAttribute(vertices_sphere, 3));
+
+            // Set the index attribute using the faces array
+            sphere_geometry.setIndex(new THREE.Uint32BufferAttribute(sphere_faces, 1));
+
+            // Compute vertex normals
+            sphere_geometry.computeVertexNormals();        
+            //-------------------------
+            const sphere_edges_geom = new THREE.LineSegments(new THREE.EdgesGeometry(sphere_geometry), new THREE.LineBasicMaterial({ color: 0XB8B8B8 }));
+            //-------------------------    
+
+            var sphere_geom = new THREE.Mesh(sphere_geometry);
+            sphere_geom.traverse(function (child) {
+            if (child instanceof THREE.Mesh) {
+                var material = new THREE.MeshBasicMaterial({
+                color: 0xD3D3D3,
+                opacity: 0.5,
+                transparent: true,
+                });
+                child.material = material;
+                child.material.side = THREE.DoubleSide;
+                child.material.depthWrite = false;
+            }
+            });
+
+            object.add(sphere_geom);
+            object.add(sphere_edges_geom);
+
+            // Add the mesh to the scene
+            scene.add(object);
+
+            zoomOut(camera, object);
+
+                transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                transformControl.addEventListener('change', render);
+                transformControl.addEventListener('dragging-changed', function (event) {
+                    controls.enabled = !event.value;
+                });
+
+                var vertexButton = document.getElementById('vertex-button');
+                vertexButton.addEventListener('click', function () {
+                    object.remove(sphere_edges_geom);
+                    if (transformControl !== undefined) {
+                      scene.remove(transformControl);
+                      transformControl.dispose();
+                      transformControl = undefined;
+                    }
+
+                    var sphere = new THREE.Mesh(sphere_geometry, new THREE.MeshBasicMaterial({
+                        wireframe: true,
+                        color: "gray"
+                      }));
+                      scene.add(sphere);
+                      object.add(sphere);
+                      
+                      var points = new THREE.Points(sphere_geometry, new THREE.PointsMaterial({
+                        size: 0.5,
+                        color: "yellow"
+                      }));
+                      scene.add(points);
+                      object.add(points);
+                      
+                      var raycaster = new THREE.Raycaster();
+                      raycaster.params.Points.threshold = 0.25;
+                      var mouse = new THREE.Vector2();
+                      var intersects = null;
+                      var plane = new THREE.Plane();
+                      var planeNormal = new THREE.Vector3();
+                      var currentIndex = null;
+                      var planePoint = new THREE.Vector3();
+                      var dragging = false;
+
+                      window.addEventListener("mousedown", mouseDown, false);
+                      window.addEventListener("mousemove", mouseMove, false);
+                      window.addEventListener("mouseup", mouseUp, false);
+                      
+                      function mouseDown(event) {
+                        setRaycaster(event);
+                        getIndex();
+                        dragging = true;
+                      }
+                      
+                      function mouseMove(event) {
+                        if (dragging && currentIndex !== null) {
+                          setRaycaster(event);
+                          raycaster.ray.intersectPlane(plane, planePoint);
+                          sphere_geometry.attributes.position.setXYZ(currentIndex, planePoint.x, planePoint.y, planePoint.z);
+                          sphere_geometry.attributes.position.needsUpdate = true;
+                        }
+                      }
+                      
+                      function mouseUp(event) {
+                        dragging = false;
+                        currentIndex = null;
+                      }
+                      
+                      function getIndex() {
+                        intersects = raycaster.intersectObject(points);
+                        if (intersects.length === 0) {
+                          currentIndex = null;
+                          return;
+                        }
+                        currentIndex = intersects[0].index;
+                        setPlane(intersects[0].point);
+                      }
+                      
+                      function setPlane(point) {
+                        planeNormal.subVectors(camera.position, point).normalize();
+                        plane.setFromNormalAndCoplanarPoint(planeNormal, point);
+                      }
+                      
+                      function setRaycaster(event) {
+                        getMouse(event);
+                        raycaster.setFromCamera(mouse, camera);
+                      }
+                      
+                      function getMouse(event) {
+                        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                      }
+                      
+                      render();
+                      
+                      function render() {
+                        requestAnimationFrame(render);
+                        renderer.render(scene, camera);
+                      }
+                });
+
+                var scaleButton = document.getElementById('scale-button');
+                scaleButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('scale');
+                });
+
+                var moveButton = document.getElementById('move-button');
+                moveButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('translate');
+                });
+
+                var pullButton = document.getElementById('rotate-button');
+                pullButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('rotate');
+                });
+
+                transformControl.attach(object);
+                scene.add(transformControl);
+        });
+
+        //------------------------------------------------------------------------------------------------------
+        // Import an existing obj file
+        //------------------------------------------------------------------------------------------------------
+        var objLoader = new THREE.OBJLoader();
+        var fileInput = document.getElementById('fileInput');
+        var object;
+
+        fileInput.addEventListener('change', function (e) {
+            var file = e.target.files[0];
+            var reader = new FileReader();
+
+            reader.addEventListener('load', function (e) {
+                var objText = e.target.result;
+                object = objLoader.parse(objText);
+                scene.add(object);
+
+                var box = new THREE.Box3().setFromObject(object);
+                var center = box.getCenter(new THREE.Vector3());
+                object.position.sub(center);
+
+                object.traverse(function (child) {
+                    if (child instanceof THREE.Mesh) {
+                        var material = new THREE.MeshStandardMaterial({
+                          color: 0xd5d5d5,
+                          roughness: 2.0,
+                          metalness: 0.8,
+                          opacity: 0.8,
+                          transparent: true
+                        });
+                        child.material = material;
+                        child.material.side = THREE.DoubleSide;
+                    }
+                });
+
+                zoomOut(camera, object);
+
+                transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                transformControl.addEventListener('change', render);
+                transformControl.addEventListener('dragging-changed', function (event) {
+                    controls.enabled = !event.value;
+                });
+
+                var scaleButton = document.getElementById('scale-button');
+                scaleButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('scale');
+                });
+
+                var moveButton = document.getElementById('move-button');
+                moveButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('translate');
+                });
+
+                var pullButton = document.getElementById('rotate-button');
+                pullButton.addEventListener('click', function () {
+                  if (transformControl === undefined) {
+                    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+                    transformControl.addEventListener('change', render);
+                    transformControl.addEventListener('dragging-changed', function (event) {
+                        controls.enabled = !event.value;
+                    });
+                    scene.add(transformControl);
+                    transformControl.attach(object);
+                  }
+                    transformControl.setMode('rotate');
+                });
+
+                transformControl.attach(object);
+                scene.add(transformControl);
+            });
+
+            reader.readAsText(file);
+        });
+
+
+        //------------------------------------------------------------------------------------------------------
+        //Set the Axis Helper
+        //------------------------------------------------------------------------------------------------------
+        var axesHelper = new THREE.AxesHelper(20);
+        axesHelper.position.y = -5;
+        scene.add(axesHelper);
+        //------------------------------------------------------------------------------------------------------
+        //Set the Lighting
+        //------------------------------------------------------------------------------------------------------
+        var hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x000000, 5.0);
+        hemisphereLight.position.set(0, 10, 10);
+        scene.add(hemisphereLight);
+        //------------------------------------------------------------------------------------------------------
+        //Export to .obj file
+        //------------------------------------------------------------------------------------------------------
+        var exportButton = document.getElementById('export-button');
+        exportButton.addEventListener('click', exportShape);
+
+        function exportShape() {
+          var exporter = new THREE.OBJExporter();
+          var result = exporter.parse(scene);
+
+          var filename = prompt('Enter a file name', 'shape.obj');
+          if (filename === null) {
+            // User canceled, do nothing
+            return;
+          }
+          downloadObjFile(result, filename);
+        }
+
+      
+        function downloadObjFile(text, filename) {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+        //------------------------------------------------------------------------------------------------------
+        // Add Orbit Controllers
+        //------------------------------------------------------------------------------------------------------
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+        // disable the default behavior of rotating the camera on mouse move
+        controls.enableRotate = false;
+
+        // add a listener to the document to detect when the shift key is pressed
+        document.addEventListener('keydown', event => {
+        if (event.shiftKey) {
+            
+            controls.enableRotate = true;  // enable camera rotation when shift key is pressed
+        }
+        });
+
+        // add a listener to the document to detect when the shift key is released
+        document.addEventListener('keyup', event => {
+        if (!event.shiftKey) {
+            controls.enableRotate = false;  // disable camera rotation when shift key is released
+        }
+        });
+
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.rotateSpeed = 0.5;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 0;
+        controls.maxDistance = Infinity;
+
+        function zoomOut(camera, object) {
+            var box = new THREE.Box3().setFromObject(object);
+            var sphere = box.getBoundingSphere(new THREE.Sphere());
+            var center = sphere.center;
+            var radius = sphere.radius;
+
+            var fov = camera.fov * (Math.PI / 180);
+            var zoom = radius / Math.tan(fov / 2);
+
+            camera.position.copy(center);
+            camera.position.z += zoom;
+
+            controls.target.copy(center);
+            controls.update();
+        }
+
+        function render() {
+            renderer.render(scene, camera);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            render();
+            hemisphereLight.position.copy(camera.position);
+        }
+
+        animate();
+
+    </script>
+</body>
+</html>
