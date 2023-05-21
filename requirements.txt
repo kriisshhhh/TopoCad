@@ -1,5 +1,5 @@
 
-python==3.10.4
+python==3.10
 click==7.1.2
 colorama==0.4.5
 contourpy==1.0.7
