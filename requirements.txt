@@ -52,6 +52,8 @@ pylib3==0.0.3
 
 
 scipy==1.9.3
+
+topology==1.18.1
 topologic==0.1.9
 topologicpy==0.4.5
 
