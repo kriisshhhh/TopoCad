@@ -54,7 +54,7 @@ pylib3==0.0.3
 scipy==1.9.3
 
 topologicpy==0.4.5
-torch==1.13.1+cu117
+
 
 virtualenv==20.22.0
 virtualenv-clone==0.5.7
