@@ -2,7 +2,6 @@
 from django.shortcuts import render
 
 # Importing topologic library
-import topologic
 import topologicpy
 from topologicpy.Cell import Cell
 from topologicpy.CellComplex import CellComplex
