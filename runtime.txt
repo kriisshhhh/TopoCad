@@ -1,6 +1,5 @@
 python-3.10.8
 
 pip install topologicpy
-pip install topologic
 pip install topology
-pip install cluster
+
